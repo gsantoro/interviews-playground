@@ -1,0 +1,14 @@
+version: "3"
+
+tasks:
+  run:
+    desc: Start the API server with hot reload
+    cmd: uv run uvicorn app.main:app --reload
+
+  test:
+    desc: Run all tests
+    cmd: uv run pytest -v
+
+  lint:
+    desc: Lint with ruff
+    cmd: uv run ruff check .
