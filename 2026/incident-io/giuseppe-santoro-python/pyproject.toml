@@ -1,16 +1,15 @@
 [project]
-name = "one-signal"
+name = "incident-io-take-home"
 version = "0.1.0"
 description = "Add your description here"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.136.1",
-    "uvicorn[standard]>=0.47.0",
+    "pytest==8.3.4",
+    "python-dateutil==2.9.0",
 ]
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
-    "pytest>=9.0.3",
     "ruff>=0.15.14",
 ]

@@ -1,0 +1,27 @@
+version: '3'
+
+tasks:
+  install:
+    desc: Install dependencies
+    cmds:
+      - uv sync
+
+  run:
+    desc: Run the script
+    cmds:
+      - uv run python main.py
+
+  test:
+    desc: Run tests
+    cmds:
+      - uv run pytest
+
+  lint:
+    desc: Lint with ruff
+    cmds:
+      - uv run ruff check .
+
+  lint-fix:
+    desc: Lint and auto-fix with ruff
+    cmds:
+      - uv run ruff check --fix .
