@@ -1,4 +1,4 @@
-import time
+import time as _time
 
 from app.core.exceptions import CapacityError, KeyNotFound, TypeMismatch
 from app.core.models import Entry, Value
@@ -8,16 +8,88 @@ class MemoryStore:
     def __init__(self, initial_capacity: int, max_keys: int, default_ttl: int = 0) -> None:
         self._max_keys = max_keys
         self._default_ttl = default_ttl
+
+        # Slot-based pre-allocation
         self._slots: list[Entry | None] = [None] * initial_capacity
-        # Stack of free slot indices; pop() gives the next available slot
         self._free: list[int] = list(range(initial_capacity - 1, -1, -1))
         self._key_index: dict[str, int] = {}
+
+        # LRU doubly linked list (O(1) promote + evict)
+        self._prev: dict[str, str | None] = {}  # key -> prev key (None if head)
+        self._next: dict[str, str | None] = {}  # key -> next key (None if tail)
+        self._head: str | None = None  # LRU — evict candidate
+        self._tail: str | None = None  # MRU — most recently used
+
+    # ------------------------------------------------------------------
+    # LRU helpers
+    # ------------------------------------------------------------------
+
+    def _append_tail(self, key: str) -> None:
+        """Add new key as MRU (tail)."""
+        self._prev[key] = self._tail
+        self._next[key] = None
+        if self._tail is not None:
+            self._next[self._tail] = key
+        self._tail = key
+        if self._head is None:
+            self._head = key
+
+    def _promote(self, key: str) -> None:
+        """Move existing key to tail (most recently used)."""
+        if self._tail == key:
+            return
+        prev_key = self._prev.get(key)
+        next_key = self._next.get(key)
+
+        if prev_key is not None:
+            self._next[prev_key] = next_key
+        else:
+            self._head = next_key
+
+        if next_key is not None:
+            self._prev[next_key] = prev_key
+
+        self._prev[key] = self._tail
+        self._next[key] = None
+        if self._tail is not None:
+            self._next[self._tail] = key
+        self._tail = key
+
+    def _detach(self, key: str) -> None:
+        """Remove key from LRU list (used on delete and eviction)."""
+        prev_key = self._prev.pop(key, None)
+        next_key = self._next.pop(key, None)
+
+        if prev_key is not None:
+            self._next[prev_key] = next_key
+        else:
+            self._head = next_key
+
+        if next_key is not None:
+            self._prev[next_key] = prev_key
+        else:
+            self._tail = prev_key
+
+    def _evict_lru(self) -> None:
+        """Remove the least recently used entry to free a slot."""
+        if self._head is None:
+            raise CapacityError("Store is full and has no entries to evict")
+        victim = self._head
+        slot = self._key_index.pop(victim)
+        self._slots[slot] = None
+        self._free.append(slot)
+        self._detach(victim)
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def get(self, key: str) -> Entry:
         if key not in self._key_index:
             raise KeyNotFound(key)
         entry = self._slots[self._key_index[key]]
         assert entry is not None
+        self._promote(key)
         return entry
 
     def set(self, key: str, value: Value, value_type: str, ttl: int | None) -> None:
@@ -28,16 +100,19 @@ class MemoryStore:
             if existing.value_type != value_type:
                 raise TypeMismatch(key, value_type, existing.value_type)
             self._slots[slot] = Entry(value=value, value_type=value_type, expires_at=existing.expires_at)
+            self._promote(key)
             return
 
         if len(self._key_index) >= self._max_keys:
-            raise CapacityError("Store is full")
+            self._evict_lru()
+
         if not self._free:
-            raise CapacityError("No free slots")
+            raise CapacityError("No free slots (call _grow first)")
 
         slot = self._free.pop()
         self._slots[slot] = Entry(value=value, value_type=value_type)
         self._key_index[key] = slot
+        self._append_tail(key)
 
     def delete(self, key: str) -> None:
         if key not in self._key_index:
@@ -45,6 +120,7 @@ class MemoryStore:
         slot = self._key_index.pop(key)
         self._slots[slot] = None
         self._free.append(slot)
+        self._detach(key)
 
     def exists(self, key: str) -> bool:
         return key in self._key_index
@@ -60,6 +136,7 @@ class MemoryStore:
             value_type=existing.value_type,
             expires_at=existing.expires_at,
         )
+        self._promote(key)
 
     def expire(self, key: str, ttl: int) -> None:
         if key not in self._key_index:
@@ -70,8 +147,9 @@ class MemoryStore:
         self._slots[slot] = Entry(
             value=existing.value,
             value_type=existing.value_type,
-            expires_at=time.time() + ttl,
+            expires_at=_time.time() + ttl,
         )
+        self._promote(key)
 
     def keys(self) -> list[str]:
         return list(self._key_index.keys())
@@ -81,3 +159,7 @@ class MemoryStore:
         self._slots = [None] * size
         self._free = list(range(size - 1, -1, -1))
         self._key_index = {}
+        self._prev = {}
+        self._next = {}
+        self._head = None
+        self._tail = None

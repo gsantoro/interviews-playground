@@ -109,3 +109,31 @@ def test_update_value_preserves_type(store: MemoryStore) -> None:
 def test_update_value_missing_raises(store: MemoryStore) -> None:
     with pytest.raises(KeyNotFound):
         store.update_value("missing", 1)
+
+
+@pytest.fixture
+def small_store() -> MemoryStore:
+    """max_keys=3 forces eviction after 3 inserts."""
+    return MemoryStore(initial_capacity=5, max_keys=3, default_ttl=0)
+
+
+def test_lru_evicts_least_recently_used(small_store: MemoryStore) -> None:
+    small_store.set("a", "1", "string", ttl=None)  # LRU order: [a]
+    small_store.set("b", "2", "string", ttl=None)  # LRU order: [a, b]
+    small_store.set("c", "3", "string", ttl=None)  # LRU order: [a, b, c] — at max_keys
+    small_store.get("a")                            # promote a: [b, c, a]
+    small_store.set("d", "4", "string", ttl=None)  # evict LRU=b; order: [c, a, d]
+
+    with pytest.raises(KeyNotFound):
+        small_store.get("b")  # b was evicted
+
+    assert small_store.get("a").value == "1"
+    assert small_store.get("c").value == "3"
+    assert small_store.get("d").value == "4"
+
+
+def test_lru_evicts_on_every_overflow(small_store: MemoryStore) -> None:
+    for i in range(6):
+        small_store.set(str(i), str(i), "string", ttl=None)
+    # Only the 3 most recent (3, 4, 5) should remain
+    assert set(small_store.keys()) == {"3", "4", "5"}
