@@ -1,0 +1,26 @@
+version: "3"
+
+tasks:
+  run:
+    desc: Start server with hot reload
+    cmd: uv run uvicorn app.main:app --reload
+
+  test:
+    desc: Run all tests
+    cmd: uv run pytest -v
+
+  test-unit:
+    desc: Run core store unit tests only
+    cmd: uv run pytest tests/test_store.py -v
+
+  lint:
+    desc: Lint with ruff
+    cmd: uv run ruff check .
+
+  format:
+    desc: Format with ruff
+    cmd: uv run ruff format .
+
+  install:
+    desc: Install dependencies
+    cmd: uv sync
