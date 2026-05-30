@@ -1,4 +1,7 @@
+import time as _time
+
 import pytest
+from unittest.mock import patch
 from app.core.models import Entry, ValueType, Value
 from app.core.exceptions import KeyNotFound, TypeMismatch, CapacityError
 from app.ports.storage import StoragePort
@@ -137,3 +140,39 @@ def test_lru_evicts_on_every_overflow(small_store: MemoryStore) -> None:
         small_store.set(str(i), str(i), "string", ttl=None)
     # Only the 3 most recent (3, 4, 5) should remain
     assert set(small_store.keys()) == {"3", "4", "5"}
+
+
+def test_set_with_ttl_returns_value_before_expiry(store: MemoryStore) -> None:
+    store.set("k", "v", "string", ttl=60)
+    assert store.get("k").value == "v"
+
+
+def test_expired_key_raises_key_not_found(store: MemoryStore) -> None:
+    store.set("k", "v", "string", ttl=10)
+    with patch("app.core.store._time") as mock_time:
+        mock_time.time.return_value = _time.time() + 11
+        with pytest.raises(KeyNotFound):
+            store.get("k")
+
+
+def test_expired_key_not_in_keys(store: MemoryStore) -> None:
+    store.set("k", "v", "string", ttl=10)
+    with patch("app.core.store._time") as mock_time:
+        mock_time.time.return_value = _time.time() + 11
+        assert "k" not in store.keys()
+
+
+def test_expire_method_sets_ttl(store: MemoryStore) -> None:
+    store.set("k", "v", "string", ttl=None)
+    store.expire("k", ttl=10)
+    with patch("app.core.store._time") as mock_time:
+        mock_time.time.return_value = _time.time() + 11
+        with pytest.raises(KeyNotFound):
+            store.get("k")
+
+
+def test_no_ttl_key_never_expires(store: MemoryStore) -> None:
+    store.set("k", "v", "string", ttl=None)
+    with patch("app.core.store._time") as mock_time:
+        mock_time.time.return_value = _time.time() + 999_999
+        assert store.get("k").value == "v"

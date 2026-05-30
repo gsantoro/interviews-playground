@@ -87,19 +87,35 @@ class MemoryStore:
     def get(self, key: str) -> Entry:
         if key not in self._key_index:
             raise KeyNotFound(key)
-        entry = self._slots[self._key_index[key]]
+        slot = self._key_index[key]
+        entry = self._slots[slot]
         assert entry is not None
+
+        if entry.expires_at is not None and _time.time() > entry.expires_at:
+            # Lazy expiry: delete and raise
+            self._slots[slot] = None
+            self._free.append(slot)
+            del self._key_index[key]
+            self._detach(key)
+            raise KeyNotFound(key)
+
         self._promote(key)
         return entry
 
     def set(self, key: str, value: Value, value_type: str, ttl: int | None) -> None:
+        expires_at: float | None = None
+        if ttl is not None and ttl > 0:
+            expires_at = _time.time() + ttl
+        elif self._default_ttl > 0:
+            expires_at = _time.time() + self._default_ttl
+
         if key in self._key_index:
             slot = self._key_index[key]
             existing = self._slots[slot]
             assert existing is not None
             if existing.value_type != value_type:
                 raise TypeMismatch(key, value_type, existing.value_type)
-            self._slots[slot] = Entry(value=value, value_type=value_type, expires_at=existing.expires_at)
+            self._slots[slot] = Entry(value=value, value_type=value_type, expires_at=expires_at)
             self._promote(key)
             return
 
@@ -110,7 +126,7 @@ class MemoryStore:
             raise CapacityError("No free slots (call _grow first)")
 
         slot = self._free.pop()
-        self._slots[slot] = Entry(value=value, value_type=value_type)
+        self._slots[slot] = Entry(value=value, value_type=value_type, expires_at=expires_at)
         self._key_index[key] = slot
         self._append_tail(key)
 
@@ -152,6 +168,18 @@ class MemoryStore:
         self._promote(key)
 
     def keys(self) -> list[str]:
+        now = _time.time()
+        expired = [
+            k for k, idx in self._key_index.items()
+            if (e := self._slots[idx]) is not None
+            and e.expires_at is not None
+            and now > e.expires_at
+        ]
+        for k in expired:
+            slot = self._key_index.pop(k)
+            self._slots[slot] = None
+            self._free.append(slot)
+            self._detach(k)
         return list(self._key_index.keys())
 
     def flush(self) -> None:
