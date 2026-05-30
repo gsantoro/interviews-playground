@@ -53,3 +53,96 @@ def test_flush(client: TestClient) -> None:
     resp = client.delete("/keys")
     assert resp.status_code == 204
     assert client.get("/keys").json() == {"keys": []}
+
+
+# --- POST set endpoints ---
+
+def test_set_integer(client: TestClient) -> None:
+    resp = client.post("/keys/count/integer", json={"value": 10})
+    assert resp.status_code == 200
+    assert client.get("/keys/count").json()["value"] == 10
+
+
+def test_set_list(client: TestClient) -> None:
+    resp = client.post("/keys/mylist/list", json={"value": ["a", "b"]})
+    assert resp.status_code == 200
+    assert client.get("/keys/mylist").json()["value"] == ["a", "b"]
+
+
+def test_set_hash(client: TestClient) -> None:
+    resp = client.post("/keys/myhash/hash", json={"value": {"name": "alice"}})
+    assert resp.status_code == 200
+    assert client.get("/keys/myhash").json()["value"] == {"name": "alice"}
+
+
+def test_set_type_mismatch_returns_409(client: TestClient) -> None:
+    client.post("/keys/foo/string", json={"value": "bar"})
+    resp = client.post("/keys/foo/integer", json={"value": 42})
+    assert resp.status_code == 409
+
+
+# --- PATCH integer/incr ---
+
+def test_incr(client: TestClient) -> None:
+    client.post("/keys/count/integer", json={"value": 10})
+    resp = client.patch("/keys/count/integer/incr", json={"delta": 5})
+    assert resp.status_code == 200
+    assert client.get("/keys/count").json()["value"] == 15
+
+
+def test_incr_default_delta(client: TestClient) -> None:
+    client.post("/keys/count/integer", json={"value": 0})
+    client.patch("/keys/count/integer/incr", json={})
+    assert client.get("/keys/count").json()["value"] == 1
+
+
+def test_incr_type_mismatch(client: TestClient) -> None:
+    client.post("/keys/foo/string", json={"value": "bar"})
+    resp = client.patch("/keys/foo/integer/incr", json={"delta": 1})
+    assert resp.status_code == 409
+
+
+# --- PATCH list/push + list/pop ---
+
+def test_list_push(client: TestClient) -> None:
+    client.post("/keys/mylist/list", json={"value": ["a"]})
+    client.patch("/keys/mylist/list/push", json={"item": "b"})
+    assert client.get("/keys/mylist").json()["value"] == ["a", "b"]
+
+
+def test_list_pop(client: TestClient) -> None:
+    client.post("/keys/mylist/list", json={"value": ["a", "b"]})
+    resp = client.patch("/keys/mylist/list/pop")
+    assert resp.status_code == 200
+    assert resp.json()["value"] == "b"
+    assert client.get("/keys/mylist").json()["value"] == ["a"]
+
+
+# --- PATCH hash/set + hash/get ---
+
+def test_hash_field_set(client: TestClient) -> None:
+    client.post("/keys/myhash/hash", json={"value": {}})
+    client.patch("/keys/myhash/hash/set", json={"field": "name", "value": "alice"})
+    assert client.get("/keys/myhash").json()["value"]["name"] == "alice"
+
+
+def test_hash_field_get(client: TestClient) -> None:
+    client.post("/keys/myhash/hash", json={"value": {"name": "alice"}})
+    resp = client.patch("/keys/myhash/hash/get", json={"field": "name"})
+    assert resp.status_code == 200
+    assert resp.json()["value"] == "alice"
+
+
+def test_hash_field_get_missing_field(client: TestClient) -> None:
+    client.post("/keys/myhash/hash", json={"value": {}})
+    resp = client.patch("/keys/myhash/hash/get", json={"field": "nope"})
+    assert resp.status_code == 404
+
+
+# --- PATCH expire ---
+
+def test_expire_endpoint(client: TestClient) -> None:
+    client.post("/keys/foo/string", json={"value": "bar"})
+    resp = client.patch("/keys/foo/expire", json={"ttl": 60})
+    assert resp.status_code == 200
+    assert 0 < client.get("/keys/foo").json()["ttl_remaining"] <= 60
