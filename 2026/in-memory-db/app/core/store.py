@@ -139,7 +139,18 @@ class MemoryStore:
         self._detach(key)
 
     def exists(self, key: str) -> bool:
-        return key in self._key_index
+        if key not in self._key_index:
+            return False
+        slot = self._key_index[key]
+        entry = self._slots[slot]
+        assert entry is not None
+        if entry.expires_at is not None and _time.time() > entry.expires_at:
+            self._slots[slot] = None
+            self._free.append(slot)
+            del self._key_index[key]
+            self._detach(key)
+            return False
+        return True
 
     def update_value(self, key: str, value: Value) -> None:
         if key not in self._key_index:

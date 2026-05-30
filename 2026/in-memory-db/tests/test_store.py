@@ -176,3 +176,10 @@ def test_no_ttl_key_never_expires(store: MemoryStore) -> None:
     with patch("app.core.store._time") as mock_time:
         mock_time.time.return_value = _time.time() + 999_999
         assert store.get("k").value == "v"
+
+
+def test_exists_false_for_expired_key(store: MemoryStore) -> None:
+    store.set("k", "v", "string", ttl=10)
+    with patch("app.core.store._time") as mock_time:
+        mock_time.time.return_value = _time.time() + 11
+        assert store.exists("k") is False
