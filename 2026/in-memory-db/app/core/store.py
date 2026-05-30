@@ -80,6 +80,13 @@ class MemoryStore:
         self._free.append(slot)
         self._detach(victim)
 
+    def _grow(self) -> None:
+        """Double slot capacity."""
+        old_size = len(self._slots)
+        self._slots.extend([None] * old_size)
+        # Add new slot indices in reverse so pop() gives lowest index first
+        self._free.extend(range(2 * old_size - 1, old_size - 1, -1))
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -123,7 +130,7 @@ class MemoryStore:
             self._evict_lru()
 
         if not self._free:
-            raise CapacityError("No free slots (call _grow first)")
+            self._grow()
 
         slot = self._free.pop()
         self._slots[slot] = Entry(value=value, value_type=value_type, expires_at=expires_at)

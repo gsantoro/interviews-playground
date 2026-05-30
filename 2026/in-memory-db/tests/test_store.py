@@ -183,3 +183,13 @@ def test_exists_false_for_expired_key(store: MemoryStore) -> None:
     with patch("app.core.store._time") as mock_time:
         mock_time.time.return_value = _time.time() + 11
         assert store.exists("k") is False
+
+
+def test_grow_beyond_initial_capacity() -> None:
+    # initial_capacity=2, max_keys=10 — store must grow when slots run out
+    store = MemoryStore(initial_capacity=2, max_keys=10, default_ttl=0)
+    for i in range(6):
+        store.set(str(i), str(i), "string", ttl=None)
+    for i in range(6):
+        assert store.get(str(i)).value == str(i)
+    assert len(store.keys()) == 6
