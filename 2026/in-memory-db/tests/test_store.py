@@ -18,11 +18,6 @@ def test_imports() -> None:
     assert StoragePort is not None
 
 
-@pytest.fixture
-def store() -> MemoryStore:
-    return MemoryStore(initial_capacity=5, max_keys=5, default_ttl=0)
-
-
 def test_set_get_string(store: MemoryStore) -> None:
     store.set("k", "hello", "string", ttl=None)
     entry = store.get("k")
@@ -112,12 +107,6 @@ def test_update_value_preserves_type(store: MemoryStore) -> None:
 def test_update_value_missing_raises(store: MemoryStore) -> None:
     with pytest.raises(KeyNotFound):
         store.update_value("missing", 1)
-
-
-@pytest.fixture
-def small_store() -> MemoryStore:
-    """max_keys=3 forces eviction after 3 inserts."""
-    return MemoryStore(initial_capacity=5, max_keys=3, default_ttl=0)
 
 
 def test_lru_evicts_least_recently_used(small_store: MemoryStore) -> None:
