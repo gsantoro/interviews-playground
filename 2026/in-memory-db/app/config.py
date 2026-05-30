@@ -1,3 +1,4 @@
+import os
 import tomllib
 from pathlib import Path
 
@@ -29,5 +30,13 @@ class ServerSettings(BaseSettings):
 
     @classmethod
     def from_toml_and_env(cls) -> "ServerSettings":
-        toml_vals = _load_toml("server")
-        return cls(**toml_vals)  # env vars (PYREDIS_*) override via pydantic-settings
+        # Precedence (highest first): PYREDIS_* env vars > config.toml > class defaults.
+        # Pydantic ranks explicit init kwargs ABOVE env vars, so passing a TOML value
+        # as a kwarg would shadow the env var. Drop any TOML key that the environment
+        # overrides, letting pydantic-settings read it from PYREDIS_* instead.
+        toml_vals = {
+            key: value
+            for key, value in _load_toml("server").items()
+            if f"PYREDIS_{key.upper()}" not in os.environ
+        }
+        return cls(**toml_vals)

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 
 from app.adapters.rest.errors import register_error_handlers
 from app.adapters.rest.router import get_store, router
-from app.config import ServerSettings, StoreSettings  # noqa: F401 — ServerSettings used in later tasks
+from app.config import ServerSettings, StoreSettings
 from app.core.store import MemoryStore
 from app.ports.storage import StoragePort
 
@@ -26,3 +26,15 @@ def create_app(store: StoragePort | None = None) -> FastAPI:
 
 
 app = create_app()
+
+
+def main() -> None:
+    """Run the server on the configured host/port (PYREDIS_* env > config.toml)."""
+    import uvicorn
+
+    cfg = ServerSettings.from_toml_and_env()
+    uvicorn.run("app.main:app", host=cfg.host, port=cfg.port, reload=True)
+
+
+if __name__ == "__main__":
+    main()
